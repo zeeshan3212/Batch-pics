@@ -5,47 +5,31 @@ import os
 import io
 import zipfile
 
-# --- 1. SETTINGS & PATHS (Pre-loaded from your repo) ---
+# --- CONFIGURATION (Pre-loaded from your GitHub Repo) ---
 FRONT_TEMPLATE_PATH = "updatedfront.png"
 BACK_TEMPLATE_PATH = "BackTemplate.jpg"
 MACHINE_IMAGE_FOLDER = "machine_images"
-FONT_PATH = "arialbd.ttf" # Ensure this is uploaded to your GitHub
+FRONT_DYNAMIC_FONT_NAME = "arialbd.ttf" 
 
-# (Keep your original coordinates from your script)
-FRONT_PHOTO_COORDS = (45, 337)
-FRONT_PHOTO_SIZE = (190, 217)
-FRONT_VEHICLE_COORDS = (758, 503)
-FRONT_VEHICLE_SIZE = (240, 135)
-FRONT_NAME_COORDS = (430, 333)
-FRONT_FATHER_NAME_COORDS = (701, 333)
-FRONT_DESIGNATION_COORDS = (532, 370)
-FRONT_SR_NO_COORDS = (89.8, 273)
-FRONT_START_COORDS = (430, 445)
-FRONT_END_COORDS = (630, 445)
-BACK_CNIC_COORDS = (300, 175)
-BACK_DOB_COORDS = (300, 211)
-BACK_ADDRESS_COORDS = (300, 250)
-BACK_HOLDER_NO_COORDS = (816, 627)
-BACK_QR_COORDS = (775, 118)
-BACK_QR_SIZE = (240, 204)
-DIPLOMA_PHOTO_BOX = (1188, 208, 1339, 364)
-DIPLOMA_QR_BOX = (1154, 772, 1328, 938)
+# Coordinates (Originals preserved)
+FRONT_PHOTO_COORDS = (45, 337); FRONT_PHOTO_SIZE = (190, 217)
+FRONT_VEHICLE_COORDS = (758, 503); FRONT_VEHICLE_SIZE = (240, 135)
+FRONT_NAME_COORDS = (430, 333); FRONT_FATHER_NAME_COORDS = (701, 333)
+FRONT_DESIGNATION_COORDS = (532, 370); FRONT_SR_NO_COORDS = (89.8, 273)
+FRONT_START_COORDS = (430, 445); FRONT_END_COORDS = (630, 445)
+BACK_CNIC_COORDS = (300, 175); BACK_DOB_COORDS = (300, 211)
+BACK_ADDRESS_COORDS = (300, 250); BACK_HOLDER_NO_COORDS = (816, 627)
+BACK_QR_COORDS = (775, 118); BACK_QR_SIZE = (240, 204)
+DIPLOMA_PHOTO_BOX = (1188, 208, 1339, 364); DIPLOMA_QR_BOX = (1154, 772, 1328, 938)
 
 MACHINE_MAP = {
-    "Trailer Driver": "trailer.png",
-    "Forklifter Operator": "forklifter.png",
-    "Excavator Operator": "excavator.png",
-    "Mobile Crane Operator": "crane.png",
-    "Shovel Operator": "shovel.png",
-    "Roller Operator": "roller.png",
-    "Damper Driver": "dumper.png",
-    "Bulldozer Operator": "doser.png",
-    "Car Driver": "car.png",
-    "JCB Operator": "jcb.png",
-    "Grader Operator": "grader.png",
-    "Bobcat Operator": "bobcat.png",
-    "Hiace Driver": "hiace.png",
-    "Rigger": "rigger.png",
+    "Trailer Driver": "trailer.png", "Forklifter Operator": "forklifter.png",
+    "Excavator Operator": "excavator.png", "Mobile Crane Operator": "crane.png",
+    "Shovel Operator": "shovel.png", "Roller Operator": "roller.png",
+    "Damper Driver": "dumper.png", "Bulldozer Operator": "doser.png",
+    "Car Driver": "car.png", "JCB Operator": "jcb.png",
+    "Grader Operator": "grader.png", "Bobcat Operator": "bobcat.png",
+    "Hiace Driver": "hiace.png", "Rigger": "rigger.png"
 }
 
 def remove_white_background(image):
@@ -60,86 +44,90 @@ def remove_white_background(image):
     img.putdata(newData)
     return img
 
-# --- STREAMLIT UI ---
+# --- APP UI ---
+st.set_page_config(page_title="PVC Card Gen", page_icon="🪪")
 st.title("🪪 PVC Card Generator")
-st.write("Upload your Excel and a ZIP file of diploma scans.")
 
-excel_file = st.file_uploader("1. Upload Students Excel", type="xlsx")
-diploma_zip = st.file_uploader("2. Upload Diploma Scans (ZIP file)", type="zip")
+uploaded_excel = st.file_uploader("1. Upload Excel (.xlsx)", type="xlsx")
 
-if st.button("Generate All Cards"):
-    if excel_file and diploma_zip:
+# --- KEY CHANGE: MULTIPLE FILES ENABLED ---
+uploaded_scans = st.file_uploader("2. Select All Diploma Scans", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+
+if st.button("🚀 Start Generating"):
+    if not (uploaded_excel and uploaded_scans):
+        st.error("Please upload the Excel file and select your scans.")
+    else:
         try:
-            # Load Excel
-            df = pd.read_excel(excel_file, dtype=str).fillna("")
+            df = pd.read_excel(uploaded_excel, dtype=str).fillna("")
             
-            # Unzip scans into memory
-            scans = {}
-            with zipfile.ZipFile(diploma_zip, 'r') as z:
-                for file_info in z.infolist():
-                    if not file_info.is_dir():
-                        scans[file_info.filename] = z.read(file_info.filename)
+            # Convert the list of uploaded files into a dictionary for quick lookup
+            # Key: Filename (e.g., 'scan1.jpg'), Value: File object
+            scans_dict = {file.name: file for file in uploaded_scans}
 
-            # Prepare Output ZIP
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-                
+            output_zip_buffer = io.BytesIO()
+            
+            with zipfile.ZipFile(output_zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_out:
                 progress_bar = st.progress(0)
-                
+
                 for index, row in df.iterrows():
-                    sr_no = row['SrNo']
-                    scan_filename = row['DiplomaScanPath'] # e.g., "scan1.jpg"
+                    sr_no = str(row['SrNo'])
+                    scan_filename = str(row['DiplomaScanPath']) 
                     
-                    if scan_filename not in scans:
-                        st.error(f"Scan {scan_filename} not found in ZIP!")
+                    if scan_filename not in scans_dict:
+                        st.warning(f"⚠️ Scan '{scan_filename}' not found in selection. Skipping.")
                         continue
 
-                    # --- IMAGE PROCESSING ---
-                    # Load Diploma from memory
-                    source_diploma = Image.open(io.BytesIO(scans[scan_filename])).convert("RGBA")
+                    # Process images
+                    source_diploma = Image.open(scans_dict[scan_filename]).convert("RGBA")
                     photo_img = source_diploma.crop(DIPLOMA_PHOTO_BOX).resize(FRONT_PHOTO_SIZE, Image.LANCZOS)
                     qr_img = source_diploma.crop(DIPLOMA_QR_BOX)
 
-                    # Generate Front
+                    # --- FRONT SIDE ---
                     card_front = Image.open(FRONT_TEMPLATE_PATH).convert("RGBA")
                     card_front.paste(photo_img, FRONT_PHOTO_COORDS, photo_img)
                     
-                    # Vehicle Logic
-                    m_file = MACHINE_MAP.get(row['Designation'])
-                    if m_file:
-                        v_img = Image.open(os.path.join(MACHINE_IMAGE_FOLDER, m_file)).convert("RGBA")
-                        v_img = v_img.resize(FRONT_VEHICLE_SIZE, Image.LANCZOS)
-                        card_front.paste(v_img, FRONT_VEHICLE_COORDS, v_img)
+                    m_filename = MACHINE_MAP.get(row['Designation'])
+                    if m_filename:
+                        m_path = os.path.join(MACHINE_IMAGE_FOLDER, m_filename)
+                        if os.path.exists(m_path):
+                            m_img = Image.open(m_path).convert("RGBA").resize(FRONT_VEHICLE_SIZE, Image.LANCZOS)
+                            card_front.paste(m_img, FRONT_VEHICLE_COORDS, m_img)
 
-                    # Draw Text (using default font for brevity, you can load your TTFs here)
                     draw_f = ImageDraw.Draw(card_front)
-                    draw_f.text(FRONT_NAME_COORDS, row['StudentName'], fill=(0,0,0))
-                    # ... (Add your other draw.text lines here) ...
+                    try:
+                        font_main = ImageFont.truetype(FRONT_DYNAMIC_FONT_NAME, size=22)
+                    except:
+                        font_main = ImageFont.load_default()
 
-                    # Save Front to ZIP
+                    draw_f.text(FRONT_NAME_COORDS, str(row['StudentName']), font=font_main, fill=(0,0,0))
+                    draw_f.text(FRONT_FATHER_NAME_COORDS, str(row['FatherName']), font=font_main, fill=(0,0,0))
+                    draw_f.text(FRONT_SR_NO_COORDS, sr_no, fill=(255, 0, 0))
+
                     f_buf = io.BytesIO()
                     card_front.save(f_buf, format="PNG")
-                    zip_file.writestr(f"{sr_no}_front.png", f_buf.getvalue())
+                    zip_out.writestr(f"{sr_no}_front.png", f_buf.getvalue())
 
-                    # Generate Back
+                    # --- BACK SIDE ---
                     card_back = Image.open(BACK_TEMPLATE_PATH).convert("RGBA")
-                    # ... (Add back card logic here) ...
+                    qr_clean = remove_white_background(qr_img).resize(BACK_QR_SIZE, Image.LANCZOS)
+                    card_back.paste(qr_clean, BACK_QR_COORDS, qr_clean)
+                    
+                    draw_b = ImageDraw.Draw(card_back)
+                    draw_b.text(BACK_CNIC_COORDS, str(row['CNIC']), font=font_main, fill=(0,0,0))
+                    
                     b_buf = io.BytesIO()
                     card_back.save(b_buf, format="PNG")
-                    zip_file.writestr(f"{sr_no}_back.png", b_buf.getvalue())
+                    zip_out.writestr(f"{sr_no}_back.png", b_buf.getvalue())
 
                     progress_bar.progress((index + 1) / len(df))
-
-            st.success("Cards Created!")
-            # --- DOWNLOAD BUTTON ---
+                
+            st.success("✅ Cards Created!")
             st.download_button(
                 label="📥 Download All Cards (.zip)",
-                data=zip_buffer.getvalue(),
+                data=output_zip_buffer.getvalue(),
                 file_name="generated_cards.zip",
                 mime="application/zip"
             )
 
         except Exception as e:
-            st.error(f"An error occurred: {e}")
-    else:
-        st.warning("Please upload both files.")
+            st.error(f"Error: {e}")
